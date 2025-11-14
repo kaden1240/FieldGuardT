@@ -12,7 +12,7 @@ import pgeocode
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
-SERVICE_ACCOUNT_FILE = "service_account.json"
+SERVICE_ACCOUNT_FILE = "fieldguardt-9a41456fe599.json"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 EMAIL_SENDER = "your_email@gmail.com"
