@@ -164,3 +164,4 @@ cython_debug/
 #.idea/
 
 service_account.json
+.streamlit/secrets.toml
