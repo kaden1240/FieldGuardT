@@ -8,16 +8,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import requests
 from datetime import datetime, timedelta
 import pgeocode
+import json
 
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
-import json
-import streamlit as st
-from google.oauth2.service_account import Credentials
-
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
+# Load Google Service Account info from Streamlit secrets
 info = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
 creds = Credentials.from_service_account_info(info, scopes=SCOPES)
 
@@ -27,7 +25,6 @@ EMAIL_PASSWORD = "your_email_password"
 # -----------------------------
 # GOOGLE SHEETS SETUP
 # -----------------------------
-
 gc = gspread.authorize(creds)
 
 # -----------------------------
