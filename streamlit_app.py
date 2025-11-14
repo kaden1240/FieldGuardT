@@ -8,6 +8,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import requests
 from datetime import datetime, timedelta
 import pgeocode
+import json
 
 # -----------------------------
 # CONFIGURATION
@@ -16,7 +17,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-import os
 
 # ✅ Dual-mode credentials
 if os.path.exists("service_account.json"):
@@ -24,7 +24,9 @@ if os.path.exists("service_account.json"):
     creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
 else:
     # Streamlit Cloud deployment
-    creds = Credentials.from_service_account_info(st.secrets["SERVICE_ACCOUNT_JSON"], scopes=SCOPES)
+    # Parse the JSON string from secrets into a Python dict
+    service_account_info = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
+    creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 
 # Authorize Google Sheets
 gc = gspread.authorize(creds)
