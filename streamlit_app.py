@@ -8,24 +8,33 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import requests
 from datetime import datetime, timedelta
 import pgeocode
-import json
 
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+import os
 
-# Load Google Service Account info from Streamlit secrets
-info = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
-creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+# ✅ Dual-mode credentials
+if os.path.exists("service_account.json"):
+    # Local development
+    creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+else:
+    # Streamlit Cloud deployment
+    creds = Credentials.from_service_account_info(st.secrets["SERVICE_ACCOUNT_JSON"], scopes=SCOPES)
 
+# Authorize Google Sheets
+gc = gspread.authorize(creds)
+sheet = gc.open("FieldGuard_Users").sheet1
+
+# ⚠️ Replace these with your real email + app password later
 EMAIL_SENDER = "your_email@gmail.com"
 EMAIL_PASSWORD = "your_email_password"
 
-# -----------------------------
-# GOOGLE SHEETS SETUP
-# -----------------------------
-gc = gspread.authorize(creds)
+
 
 # -----------------------------
 # NOAA WEATHER FETCH
@@ -60,7 +69,8 @@ def fetch_weather(zip_code, days_ahead=14):
 
         temp = period["temperature"]
         temp_unit = period["temperatureUnit"]
-        # NWS API does not give humidity directly, approximate as 80%
+
+        # NWS does NOT provide humidity → approximate
         humidity = 80  
         precip = period.get("probabilityOfPrecipitation", {}).get("value", 0) or 0
 
@@ -118,13 +128,12 @@ def update_user_sheet(email, zip_code, weather_df):
     ws.update([weather_df.columns.values.tolist()] + weather_df.values.tolist())
 
     # Email alert for high risk
-    high_risk = weather_df[weather_df["risk"]=="HIGH"]
+    high_risk = weather_df[weather_df["risk"] == "HIGH"]
     if not high_risk.empty:
         message = f"⚠️ High Late Blight risk forecast for {zip_code} on:\n"
         message += "\n".join(high_risk["date"].tolist())
         send_email(email, message)
     else:
-        # If no high risk, write “clear” message to the sheet
         clear_message = [["Note", f"Your farm seems clear of late blight risk for the next {len(weather_df)} days."]]
         ws.append_rows(clear_message)
 
@@ -132,6 +141,7 @@ def update_user_sheet(email, zip_code, weather_df):
 # SCHEDULER
 # -----------------------------
 scheduler = BackgroundScheduler()
+
 def scheduled_job(email, zip_code):
     try:
         weather_df = fetch_weather(zip_code, days_ahead=14)
@@ -162,7 +172,13 @@ if st.button("Submit"):
         # Schedule twice daily checks (every 12 hours)
         job_id = f"{email}_{zip_code}"
         if not scheduler.get_job(job_id):
-            scheduler.add_job(scheduled_job, "interval", hours=12, args=[email, zip_code], id=job_id)
+            scheduler.add_job(
+                scheduled_job,
+                "interval",
+                hours=12,
+                args=[email, zip_code],
+                id=job_id
+            )
 
         # Run immediately once
         scheduled_job(email, zip_code)
