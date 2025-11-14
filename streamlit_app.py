@@ -12,8 +12,14 @@ import pgeocode
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
-SERVICE_ACCOUNT_FILE = "service_account.json"
+import json
+import streamlit as st
+from google.oauth2.service_account import Credentials
+
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+info = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
+creds = Credentials.from_service_account_info(info, scopes=SCOPES)
 
 EMAIL_SENDER = "your_email@gmail.com"
 EMAIL_PASSWORD = "your_email_password"
@@ -21,7 +27,7 @@ EMAIL_PASSWORD = "your_email_password"
 # -----------------------------
 # GOOGLE SHEETS SETUP
 # -----------------------------
-creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+
 gc = gspread.authorize(creds)
 
 # -----------------------------
