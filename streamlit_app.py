@@ -18,17 +18,23 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# ✅ Dual-mode credentials
+# --- Dual-mode credentials ---
 if os.path.exists("service_account.json"):
     # Local development
-    creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
+    creds = Credentials.from_service_account_file(
+        "service_account.json",
+        scopes=SCOPES
+    )
 else:
     # Streamlit Cloud deployment
-    # Parse the JSON string from secrets into a Python dict
-    service_account_info = json.loads(st.secrets["SERVICE_ACCOUNT_JSON"])
-    creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+    # Directly use the dict from st.secrets — no JSON parsing needed
+    service_account_info = st.secrets["SERVICE_ACCOUNT_JSON"]
+    creds = Credentials.from_service_account_info(
+        service_account_info,
+        scopes=SCOPES
+    )
 
-# Authorize Google Sheets
+# --- Authorize Google Sheets ---
 gc = gspread.authorize(creds)
 sheet = gc.open("FieldGuard_Users").sheet1
 
