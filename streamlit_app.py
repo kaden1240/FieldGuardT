@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 import smtplib
 from email.mime.text import MIMEText
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -31,6 +32,11 @@ FOLDER_ID = "1YdgZqHvXwpwEvEfJaAG884m-Y9AG2hSi"
 # ⚠️ Email setup (replace with real credentials)
 EMAIL_SENDER = "fieldguard0@gmail.com"
 EMAIL_PASSWORD = "bqvf eews ojzl wppi"
+
+# -----------------------------
+# DRIVE API
+# -----------------------------
+drive_service = build('drive', 'v3', credentials=creds)
 
 # -----------------------------
 # NOAA WEATHER FETCH
@@ -95,9 +101,22 @@ def update_user_sheet(email, zip_code, weather_df):
     try:
         sh = gc.open(sheet_name)
     except gspread.SpreadsheetNotFound:
-        sh = gc.create(sheet_name, folder_id=FOLDER_ID)
+        sh = gc.create(sheet_name)  # create WITHOUT folder_id
+
+        # Move sheet into the folder
+        try:
+            drive_service.files().update(
+                fileId=sh.id,
+                addParents=FOLDER_ID,
+                removeParents='root',
+                fields='id, parents'
+            ).execute()
+        except Exception as e:
+            print(f"Warning: could not move sheet to folder: {e}")
+
+    # Always share the sheet with the user
     try:
-        sh.share(email, perm_type="user", role="writer")  # share with user
+        sh.share(email, perm_type="user", role="writer")
     except Exception as e:
         print(f"Warning: could not share sheet with {email}: {e}")
 
@@ -105,6 +124,7 @@ def update_user_sheet(email, zip_code, weather_df):
     ws.clear()
     ws.update([weather_df.columns.values.tolist()] + weather_df.values.tolist())
 
+    # Send HIGH risk email if applicable
     high_risk = weather_df[weather_df["risk"] == "HIGH"]
     if not high_risk.empty:
         message = f"⚠️ High Late Blight risk forecast for {zip_code} on:\n"
@@ -145,24 +165,32 @@ if st.button("Submit"):
         st.success(f"Thanks! We’ll monitor late blight risk for ZIP code {zip_code}.")
 
         # -----------------------------
-        # CREATE/OPEN SHEET + SHARE IT
+        # CREATE/OPEN SHEET + SHARE + MOVE
         # -----------------------------
         sheet_name = f"{email}_{zip_code}_LateBlight"
-
         try:
             sh = gc.open(sheet_name)
         except gspread.SpreadsheetNotFound:
-            sh = gc.create(sheet_name, folder_id=FOLDER_ID)
+            sh = gc.create(sheet_name)  # no folder_id here
 
-        # Always attempt to share sheet
+            # Move to folder
+            try:
+                drive_service.files().update(
+                    fileId=sh.id,
+                    addParents=FOLDER_ID,
+                    removeParents='root',
+                    fields='id, parents'
+                ).execute()
+            except Exception as e:
+                print(f"Warning: could not move sheet to folder: {e}")
+
+        # Share with user
         try:
             sh.share(email, perm_type="user", role="writer")
         except Exception as e:
             print(f"Warning: could not share sheet with {email}: {e}")
 
-        # -----------------------------
-        # SEND SHEET LINK EMAIL (SEPARATE)
-        # -----------------------------
+        # Send sheet link email
         try:
             sheet_url = sh.url
             send_email(
@@ -187,8 +215,9 @@ if st.button("Submit"):
                 id=job_id
             )
 
-        # Run immediately once (will send HIGH ALERT email separately if needed)
+        # Run immediately once
         scheduled_job(email, zip_code)
+
 
 
 #git add .
