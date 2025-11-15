@@ -16,6 +16,7 @@ import os
 # -----------------------------
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/drive"
 ]
 
@@ -98,21 +99,13 @@ def send_email(to_email, message):
 # -----------------------------
 def update_user_sheet(email, zip_code, weather_df):
     sheet_name = f"{email}_{zip_code}_LateBlight"
+    
+    # Try to open the sheet if it exists
     try:
         sh = gc.open(sheet_name)
     except gspread.SpreadsheetNotFound:
-        sh = gc.create(sheet_name)  # create WITHOUT folder_id
-
-        # Move sheet into the folder
-        try:
-            drive_service.files().update(
-                fileId=sh.id,
-                addParents=FOLDER_ID,
-                removeParents='root',
-                fields='id, parents'
-            ).execute()
-        except Exception as e:
-            print(f"Warning: could not move sheet to folder: {e}")
+        # Create the sheet directly in the folder
+        sh = gc.create(sheet_name, folder_id=FOLDER_ID)
 
     # Always share the sheet with the user
     try:
@@ -120,6 +113,7 @@ def update_user_sheet(email, zip_code, weather_df):
     except Exception as e:
         print(f"Warning: could not share sheet with {email}: {e}")
 
+    # Clear and update sheet
     ws = sh.sheet1
     ws.clear()
     ws.update([weather_df.columns.values.tolist()] + weather_df.values.tolist())
