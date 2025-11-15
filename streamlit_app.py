@@ -94,10 +94,10 @@ def update_user_sheet(email, zip_code, weather_df):
         sh = gc.open(sheet_name)
     except gspread.SpreadsheetNotFound:
         sh = gc.create(sheet_name)
-        try:
-            sh.share(email, perm_type="user", role="writer")  # share with user
-        except Exception as e:
-            print(f"Warning: could not share sheet with {email}: {e}")
+    try:
+        sh.share(email, perm_type="user", role="writer")  # share with user
+    except Exception as e:
+        print(f"Warning: could not share sheet with {email}: {e}")
 
     ws = sh.sheet1
     ws.clear()
@@ -141,6 +141,40 @@ if st.button("Submit"):
         st.error("Please enter both ZIP code and email.")
     else:
         st.success(f"Thanks! We’ll monitor late blight risk for ZIP code {zip_code}.")
+
+        # -----------------------------
+        # CREATE/OPEN SHEET + SHARE IT
+        # -----------------------------
+        sheet_name = f"{email}_{zip_code}_LateBlight"
+
+        try:
+            sh = gc.open(sheet_name)
+        except gspread.SpreadsheetNotFound:
+            sh = gc.create(sheet_name)
+
+        # Always attempt to share sheet
+        try:
+            sh.share(email, perm_type="user", role="writer")
+        except Exception as e:
+            print(f"Warning: could not share sheet with {email}: {e}")
+
+        # -----------------------------
+        # SEND SHEET LINK EMAIL (SEPARATE)
+        # -----------------------------
+        try:
+            sheet_url = sh.url
+            send_email(
+                email,
+                f"Your FieldGuard tracking sheet has been created.\n\n"
+                f"Access it here:\n{sheet_url}\n\n"
+                f"We’ll update it every 12 hours."
+            )
+        except Exception as e:
+            print(f"Warning: could not send sheet link email to {email}: {e}")
+
+        # -----------------------------
+        # SCHEDULE RECURRING JOB
+        # -----------------------------
         job_id = f"{email}_{zip_code}"
         if not scheduler.get_job(job_id):
             scheduler.add_job(
@@ -150,7 +184,12 @@ if st.button("Submit"):
                 args=[email, zip_code],
                 id=job_id
             )
-        scheduled_job(email, zip_code)  # run immediately once
+
+        # Run immediately once (will send HIGH ALERT email separately if needed)
+        scheduled_job(email, zip_code)
 
 
+#git add .
+#git commit -m "Fix Streamlit app: dynamic sheets, scheduler, email alerts, no secrets"
+#git push origin main
 
