@@ -18,17 +18,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# --- Credentials setup ---
+# ✅ Dual-mode credentials: local file or cloud file
 if os.path.exists("service_account.json"):
-    # Local development using JSON file
+    # Local or cloud deployment if the JSON is present
     creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
 else:
-    # Streamlit Cloud deployment — read directly from st.secrets
-    # st.secrets["SERVICE_ACCOUNT"] is already a dict, do NOT json.loads
-    service_account_info = st.secrets["SERVICE_ACCOUNT"]
-    creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+    raise FileNotFoundError("service_account.json not found. Place it in your project root.")
 
-# --- Authorize Google Sheets ---
+# Authorize Google Sheets
 gc = gspread.authorize(creds)
 sheet = gc.open("FieldGuard_Users").sheet1
 
