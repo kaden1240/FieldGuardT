@@ -18,13 +18,14 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# --- Dual-mode credentials ---
+# --- Credentials setup ---
 if os.path.exists("service_account.json"):
-    # Local development
+    # Local development using JSON file
     creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
 else:
-    # Streamlit Cloud deployment — read directly as dict
-    service_account_info = st.secrets["SERVICE_ACCOUNT_JSON"]
+    # Streamlit Cloud deployment — read directly from st.secrets
+    # st.secrets["SERVICE_ACCOUNT"] is already a dict, do NOT json.loads
+    service_account_info = st.secrets["SERVICE_ACCOUNT"]
     creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 
 # --- Authorize Google Sheets ---
