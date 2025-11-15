@@ -19,11 +19,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# ✅ Credentials (local file)
-if os.path.exists("service_account.json"):
-    creds = Credentials.from_service_account_file("service_account.json", scopes=SCOPES)
-else:
-    raise FileNotFoundError("service_account.json not found. Place it in your project root.")
+# === LOAD CREDS FROM STREAMLIT SECRETS ===
+# Your secrets.toml contains: [gcp_service_account] { …keys… }
+service_info = st.secrets["google_saccount"]
+
+creds = Credentials.from_service_account_info(service_info, scopes=SCOPES)
 
 gc = gspread.authorize(creds)
 
