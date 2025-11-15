@@ -26,9 +26,11 @@ else:
 
 gc = gspread.authorize(creds)
 
+FOLDER_ID = "1YdgZqHvXwpwEvEfJaAG884m-Y9AG2hSi"
+
 # ⚠️ Email setup (replace with real credentials)
 EMAIL_SENDER = "fieldguard0@gmail.com"
-EMAIL_PASSWORD = "mufflin!curve"
+EMAIL_PASSWORD = "bqvf eews ojzl wppi"
 
 # -----------------------------
 # NOAA WEATHER FETCH
@@ -93,7 +95,7 @@ def update_user_sheet(email, zip_code, weather_df):
     try:
         sh = gc.open(sheet_name)
     except gspread.SpreadsheetNotFound:
-        sh = gc.create(sheet_name)
+        sh = gc.create(sheet_name, folder_id=FOLDER_ID)
     try:
         sh.share(email, perm_type="user", role="writer")  # share with user
     except Exception as e:
@@ -150,7 +152,7 @@ if st.button("Submit"):
         try:
             sh = gc.open(sheet_name)
         except gspread.SpreadsheetNotFound:
-            sh = gc.create(sheet_name)
+            sh = gc.create(sheet_name, folder_id=FOLDER_ID)
 
         # Always attempt to share sheet
         try:
