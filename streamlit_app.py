@@ -1,46 +1,27 @@
 import streamlit as st
 import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
+import requests
+import pgeocode
 import smtplib
 from email.mime.text import MIMEText
 from apscheduler.schedulers.background import BackgroundScheduler
-import requests
-from datetime import datetime, timedelta
-import pgeocode
-import os
+from supabase import create_client
 
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive.file",
-    "https://www.googleapis.com/auth/drive"
-]
+SUPABASE_URL = "https://vkbmhedzzguegjyqpljy.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZrYm1oZWR6emd1ZWdqeXFwbGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyMzUyOTYsImV4cCI6MjA3ODgxMTI5Nn0.pCZYXEpbV8oQFExQeKbSsjSp-t5B9vQLTwO12EI1sy0"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# === LOAD CREDS FROM STREAMLIT SECRETS ===
-service_info = st.secrets["google_saccount"]
-creds = Credentials.from_service_account_info(service_info, scopes=SCOPES)
-gc = gspread.authorize(creds)
-
-FOLDER_ID = "1YdgZqHvXwpwEvEfJaAG884m-Y9AG2hSi"
-
-# ⚠️ Email setup (replace with real credentials)
 EMAIL_SENDER = "fieldguard0@gmail.com"
 EMAIL_PASSWORD = "bqvf eews ojzl wppi"
-
-# -----------------------------
-# DRIVE API
-# -----------------------------
-drive_service = build('drive', 'v3', credentials=creds)
 
 # -----------------------------
 # NOAA WEATHER FETCH
 # -----------------------------
 def fetch_weather(zip_code, days_ahead=14):
-    nomi = pgeocode.Nominatim('us')
+    nomi = pgeocode.Nominatim("us")
     location = nomi.query_postal_code(zip_code)
     lat, lon = location.latitude, location.longitude
     if pd.isna(lat) or pd.isna(lon):
@@ -59,7 +40,7 @@ def fetch_weather(zip_code, days_ahead=14):
             continue
         added_dates.add(date)
         temp = period["temperature"]
-        humidity = 80  # approximate
+        humidity = 80
         precip = period.get("probabilityOfPrecipitation", {}).get("value", 0) or 0
         data.append({"date": date, "temp": temp, "humidity": humidity, "rainfall": precip})
     return pd.DataFrame(data)
@@ -69,10 +50,7 @@ def fetch_weather(zip_code, days_ahead=14):
 # -----------------------------
 def calculate_late_blight_risk(weather_df):
     def risk_row(row):
-        if 60 <= row["temp"] <= 80 and row["humidity"] > 80 and row["rainfall"] > 0.1:
-            return "HIGH"
-        else:
-            return "LOW"
+        return "HIGH" if 60 <= row["temp"] <= 80 and row["humidity"] > 80 and row["rainfall"] > 0.1 else "LOW"
     weather_df["risk"] = weather_df.apply(risk_row, axis=1)
     return weather_df
 
@@ -92,37 +70,35 @@ def send_email(to_email, message):
         print(f"Email failed: {e}")
 
 # -----------------------------
-# GOOGLE SHEET UPDATE
+# SUPABASE UPDATE
 # -----------------------------
-def update_user_sheet(email, zip_code, weather_df):
-    sheet_name = f"{email}_{zip_code}_LateBlight"
+def update_user_forecast(email, zip_code, weather_df):
+    # Upsert user
+    supabase.table("users").upsert({"email": email, "zip_code": zip_code}).execute()
 
-    # Try to open the sheet if it exists
-    try:
-        sh = gc.open(sheet_name)
-    except gspread.SpreadsheetNotFound:
-        # Create the sheet directly in the folder
-        sh = gc.create(sheet_name, folder_id=FOLDER_ID)
+    # Delete old forecasts
+    supabase.table("forecasts").delete().eq("email", email).execute()
 
-    # Always share the sheet with the user
-    try:
-        sh.share(email, perm_type="user", role="writer")
-    except Exception as e:
-        print(f"Warning: could not share sheet with {email}: {e}")
-
-    # Clear and update sheet
-    ws = sh.sheet1
-    ws.clear()
-    ws.update([weather_df.columns.values.tolist()] + weather_df.values.tolist())
+    # Insert new forecast data
+    records = [
+        {
+            "email": email,
+            "zip_code": zip_code,
+            "date": row["date"],
+            "temp": row["temp"],
+            "humidity": row["humidity"],
+            "rainfall": row["rainfall"],
+            "risk": row["risk"]
+        }
+        for _, row in weather_df.iterrows()
+    ]
+    supabase.table("forecasts").insert(records).execute()
 
     # Send HIGH risk email if applicable
     high_risk = weather_df[weather_df["risk"] == "HIGH"]
     if not high_risk.empty:
-        message = f"⚠️ High Late Blight risk forecast for {zip_code} on:\n"
-        message += "\n".join(high_risk["date"].tolist())
+        message = f"⚠️ High Late Blight risk forecast for {zip_code} on:\n" + "\n".join(high_risk["date"].tolist())
         send_email(email, message)
-    else:
-        ws.append_rows([["Note", f"Your farm seems clear of late blight risk for the next {len(weather_df)} days."]])
 
 # -----------------------------
 # SCHEDULER
@@ -136,7 +112,7 @@ def scheduled_job(email, zip_code):
         if weather_df.empty:
             return
         weather_df = calculate_late_blight_risk(weather_df)
-        update_user_sheet(email, zip_code, weather_df)
+        update_user_forecast(email, zip_code, weather_df)
     except Exception as e:
         print(f"Error for {zip_code}: {e}")
 
@@ -155,36 +131,7 @@ if st.button("Submit"):
     else:
         st.success(f"Thanks! We’ll monitor late blight risk for ZIP code {zip_code}.")
 
-        # -----------------------------
-        # CREATE/OPEN SHEET + SHARE
-        # -----------------------------
-        sheet_name = f"{email}_{zip_code}_LateBlight"
-        try:
-            sh = gc.open(sheet_name)
-        except gspread.SpreadsheetNotFound:
-            sh = gc.create(sheet_name, folder_id=FOLDER_ID)
-
-        # Share with user
-        try:
-            sh.share(email, perm_type="user", role="writer")
-        except Exception as e:
-            print(f"Warning: could not share sheet with {email}: {e}")
-
-        # Send sheet link email
-        try:
-            sheet_url = sh.url
-            send_email(
-                email,
-                f"Your FieldGuard tracking sheet has been created.\n\n"
-                f"Access it here:\n{sheet_url}\n\n"
-                f"We’ll update it every 12 hours."
-            )
-        except Exception as e:
-            print(f"Warning: could not send sheet link email to {email}: {e}")
-
-        # -----------------------------
-        # SCHEDULE RECURRING JOB
-        # -----------------------------
+        # Schedule recurring job
         job_id = f"{email}_{zip_code}"
         if not scheduler.get_job(job_id):
             scheduler.add_job(
@@ -197,6 +144,7 @@ if st.button("Submit"):
 
         # Run immediately once
         scheduled_job(email, zip_code)
+
 
 
 
