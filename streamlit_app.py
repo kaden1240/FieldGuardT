@@ -9,7 +9,7 @@ import requests
 from datetime import datetime, timedelta
 import pgeocode
 import json
-
+import os
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
