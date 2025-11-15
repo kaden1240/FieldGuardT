@@ -21,11 +21,8 @@ SCOPES = [
 ]
 
 # === LOAD CREDS FROM STREAMLIT SECRETS ===
-# Your secrets.toml contains: [gcp_service_account] { …keys… }
 service_info = st.secrets["google_saccount"]
-
 creds = Credentials.from_service_account_info(service_info, scopes=SCOPES)
-
 gc = gspread.authorize(creds)
 
 FOLDER_ID = "1YdgZqHvXwpwEvEfJaAG884m-Y9AG2hSi"
@@ -99,7 +96,7 @@ def send_email(to_email, message):
 # -----------------------------
 def update_user_sheet(email, zip_code, weather_df):
     sheet_name = f"{email}_{zip_code}_LateBlight"
-    
+
     # Try to open the sheet if it exists
     try:
         sh = gc.open(sheet_name)
@@ -159,24 +156,13 @@ if st.button("Submit"):
         st.success(f"Thanks! We’ll monitor late blight risk for ZIP code {zip_code}.")
 
         # -----------------------------
-        # CREATE/OPEN SHEET + SHARE + MOVE
+        # CREATE/OPEN SHEET + SHARE
         # -----------------------------
         sheet_name = f"{email}_{zip_code}_LateBlight"
         try:
             sh = gc.open(sheet_name)
         except gspread.SpreadsheetNotFound:
-            sh = gc.create(sheet_name)  # no folder_id here
-
-            # Move to folder
-            try:
-                drive_service.files().update(
-                    fileId=sh.id,
-                    addParents=FOLDER_ID,
-                    removeParents='root',
-                    fields='id, parents'
-                ).execute()
-            except Exception as e:
-                print(f"Warning: could not move sheet to folder: {e}")
+            sh = gc.create(sheet_name, folder_id=FOLDER_ID)
 
         # Share with user
         try:
