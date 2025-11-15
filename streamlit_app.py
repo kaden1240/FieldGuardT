@@ -27,8 +27,8 @@ else:
 gc = gspread.authorize(creds)
 
 # ⚠️ Email setup (replace with real credentials)
-EMAIL_SENDER = "your_email@gmail.com"
-EMAIL_PASSWORD = "your_email_password"
+EMAIL_SENDER = "fieldguard0@gmail.com"
+EMAIL_PASSWORD = "mufflin!curve"
 
 # -----------------------------
 # NOAA WEATHER FETCH
@@ -151,3 +151,6 @@ if st.button("Submit"):
                 id=job_id
             )
         scheduled_job(email, zip_code)  # run immediately once
+
+
+
