@@ -160,20 +160,25 @@ def send_email(to_email, message):
 # SUPABASE UPDATE
 # -----------------------------
 def update_user_forecast(email, zip_code, weather_df):
+    """
+    Inserts forecast data into Supabase, matching your table columns:
+    id (auto), created_at (auto), date, temp, humidity, rainfall, risk, zip_code, email
+    """
+
     # Clear previous forecasts for this email
     supabase.table("forecasts").delete().eq("email", email).execute()
 
-    # Convert all rows into clean supabase-friendly records
+    # Convert all rows into clean Supabase-friendly records
     records = []
     for _, row in weather_df.iterrows():
         records.append({
             "email": email,
             "zip_code": zip_code,
-            "date": str(row["date"]),             # Guarantees date format
-            "temp": float(row["temp"]),           # numeric
-            "humidity": float(row["humidity"]),   # numeric
-            "rainfall": float(row["rainfall"]),   # numeric
-            "risk": row["risk"]                   # text
+            "date": str(row["date"]),            # date column
+            "temp": float(row["avg_temp"]),      # numeric
+            "humidity": float(row["avg_rh"]),   # numeric
+            "rainfall": float(row["total_rain"]), # numeric
+            "risk": row["risk"]                  # text
         })
 
     # Insert all records in one batch
@@ -184,9 +189,8 @@ def update_user_forecast(email, zip_code, weather_df):
     high_risk = weather_df[weather_df["risk"] == "HIGH"]
     if not high_risk.empty:
         message = f"⚠️ High Late Blight risk forecast for {zip_code} on:\n"
-        message += "\n".join(high_risk["date"].tolist())
+        message += "\n".join([str(d) for d in high_risk["date"].tolist()])
         send_email(email, message)
-
 # -----------------------------
 # SCHEDULER
 # -----------------------------
