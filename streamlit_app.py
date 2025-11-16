@@ -82,12 +82,6 @@ def send_email(to_email, message):
 # SUPABASE UPDATE
 # -----------------------------
 def update_user_forecast(email, zip_code, weather_df):
-    # Upsert user row
-    supabase.table("users").upsert({
-        "email": email,
-        "zip_code": zip_code
-    }).execute()
-
     # Clear previous forecasts for this email
     supabase.table("forecasts").delete().eq("email", email).execute()
 
@@ -104,8 +98,9 @@ def update_user_forecast(email, zip_code, weather_df):
             "risk": row["risk"]                   # text
         })
 
-    # Insert in one batch (better + avoids silent failures)
-    supabase.table("forecasts").insert(records).execute()
+    # Insert all records in one batch
+    res = supabase.table("forecasts").insert(records).execute()
+    print("Supabase insert response:", res)  # logs success or error
 
     # Email alerts for high-risk days
     high_risk = weather_df[weather_df["risk"] == "HIGH"]
