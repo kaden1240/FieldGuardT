@@ -74,12 +74,14 @@ def send_email(to_email, message):
 # -----------------------------
 def update_user_forecast(email, zip_code, weather_df):
     # Upsert user
-    supabase.table("users").upsert({"email": email, "zip_code": zip_code}).execute()
+    resp1 = supabase.table("users").upsert({"email": email, "zip_code": zip_code}).execute()
+    print("UPSERT USER:", resp1)
 
     # Delete old forecasts
-    supabase.table("forecasts").delete().eq("email", email).execute()
+    resp2 = supabase.table("forecasts").delete().eq("email", email).execute()
+    print("DELETE FORECAST:", resp2)
 
-    # Insert new forecast data
+    # Insert forecast rows
     records = [
         {
             "email": email,
@@ -92,7 +94,8 @@ def update_user_forecast(email, zip_code, weather_df):
         }
         for _, row in weather_df.iterrows()
     ]
-    supabase.table("forecasts").insert(records).execute()
+    resp3 = supabase.table("forecasts").insert(records).execute()
+    print("INSERT FORECAST:", resp3)
 
     # Send HIGH risk email if applicable
     high_risk = weather_df[weather_df["risk"] == "HIGH"]
