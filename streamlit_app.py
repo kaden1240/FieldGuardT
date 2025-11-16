@@ -9,6 +9,8 @@ from datetime import datetime, timedelta
 from supabase import create_client
 import os
 
+
+
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
@@ -27,39 +29,115 @@ EMAIL_PASSWORD = "bqvf eews ojzl wppi"
 # NOAA WEATHER FETCH
 # -----------------------------
 def fetch_weather(zip_code, days_ahead=14):
-    nomi = pgeocode.Nominatim('us')
+    """
+    Fetch hourly weather data from Open‑Meteo and aggregate daily.
+    Returns a DataFrame with: date, avg_temp (°F), max_temp, min_temp,
+    avg_rh (%), avg_dewpoint (°F), total_rain (inches).
+    """
+    # Geocode ZIP → lat/lon
+    nomi = pgeocode.Nominatim("us")
     location = nomi.query_postal_code(zip_code)
     lat, lon = location.latitude, location.longitude
     if pd.isna(lat) or pd.isna(lon):
         return pd.DataFrame()
 
-    points_url = f"https://api.weather.gov/points/{lat},{lon}"
-    r = requests.get(points_url)
-    r.raise_for_status()
-    forecast_url = r.json()["properties"]["forecast"]
-    forecast_data = requests.get(forecast_url).json()["properties"]["periods"]
+    # Open-Meteo API: hourly variables
+    url = (
+        "https://api.open-meteo.com/v1/gfs"
+        f"?latitude={lat}&longitude={lon}"
+        f"&hourly=temperature_2m,relative_humidity_2m,dew_point_2m,precipitation"
+        f"&forecast_days={days_ahead}"
+        "&temperature_unit=fahrenheit"
+        "&precipitation_unit=inch"
+        "&timezone=auto"
+    )
+    resp = requests.get(url)
+    resp.raise_for_status()
+    js = resp.json()
 
-    data, added_dates = [], set()
-    for period in forecast_data:
-        date = period["startTime"][:10]
-        if date in added_dates or len(data) >= days_ahead:
-            continue
-        added_dates.add(date)
-        temp = period["temperature"]
-        humidity = 80
-        precip = period.get("probabilityOfPrecipitation", {}).get("value", 0) or 0
-        data.append({"date": date, "temp": temp, "humidity": humidity, "rainfall": precip})
-    return pd.DataFrame(data)
+    hourly = js["hourly"]
+    times = hourly["time"]
+    temps = hourly["temperature_2m"]
+    rhs = hourly["relative_humidity_2m"]
+    dewpts = hourly["dew_point_2m"]
+    precips = hourly["precipitation"]
+
+    # Build a DataFrame for hourly data
+    df_hour = pd.DataFrame({
+        "time": pd.to_datetime(times),
+        "temp": temps,
+        "rh": rhs,
+        "dewpoint": dewpts,
+        "precip": precips,
+    })
+
+    # Aggregate to daily
+    df_hour["date"] = df_hour["time"].dt.date
+    daily = df_hour.groupby("date").agg({
+        "temp": ["mean", "min", "max"],
+        "rh": "mean",
+        "dewpoint": "mean",
+        "precip": "sum",
+    }).reset_index()
+
+    # Flatten multi-index
+    daily.columns = [
+        "date",
+        "avg_temp", "min_temp", "max_temp",
+        "avg_rh", "avg_dewpoint",
+        "total_rain"
+    ]
+
+    return daily
 
 # -----------------------------
-# LATE BLIGHT RISK
+# LATE BLIGHT RISK CALCULATION
 # -----------------------------
 def calculate_late_blight_risk(weather_df):
+    """
+    Calculate late blight risk using:
+      - Temperature (daily avg / min / max)
+      - Average relative humidity
+      - Average dew point (as a proxy for leaf wetness)
+      - Daily total precipitation
+    Returns a DataFrame with a 'risk' column: LOW / MEDIUM / HIGH.
+    """
     def risk_row(row):
-        if 60 <= row["temp"] <= 80 and row["humidity"] > 80 and row["rainfall"] > 0.1:
+        # Temperature criteria
+        avg_t = row["avg_temp"]
+        max_t = row["max_temp"]
+        min_t = row["min_temp"]
+
+        # Humidity & dewpoint
+        rh = row["avg_rh"]
+        dp = row["avg_dewpoint"]
+
+        # Rain
+        rain = row["total_rain"]
+
+        # Conditions:
+        # High risk: favorable temp, high humidity or dewpoint close to temp, and rain
+        temp_ok = (min_t >= 55 and max_t <= 85)
+        very_humid = (rh >= 90)
+        dew_wet = False
+        if pd.notna(dp):
+            dew_wet = abs(dp - avg_t) <= 2  # dew point very close → likely dew
+
+        rain_enough = rain >= 0.1  # at least 0.1 inch rain
+
+        if temp_ok and (very_humid or dew_wet) and rain_enough:
             return "HIGH"
-        else:
-            return "LOW"
+
+        # Medium risk
+        med_temp = (min_t >= 50 and max_t <= 90)
+        med_humid = (rh >= 85)
+        med_rain = rain > 0
+
+        if med_temp and (med_humid or dew_wet) and med_rain:
+            return "MEDIUM"
+
+        return "LOW"
+
     weather_df["risk"] = weather_df.apply(risk_row, axis=1)
     return weather_df
 
