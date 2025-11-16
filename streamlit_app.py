@@ -5,15 +5,21 @@ import pgeocode
 import smtplib
 from email.mime.text import MIMEText
 from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime, timedelta
 from supabase import create_client
+import os
 
 # -----------------------------
 # CONFIGURATION
 # -----------------------------
+from supabase import create_client
+
 SUPABASE_URL = "https://vkbmhedzzguegjyqpljy.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZrYm1oZWR6emd1ZWdqeXFwbGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyMzUyOTYsImV4cCI6MjA3ODgxMTI5Nn0.pCZYXEpbV8oQFExQeKbSsjSp-t5B9vQLTwO12EI1sy0"
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ⚠️ Email setup (replace with real credentials)
 EMAIL_SENDER = "fieldguard0@gmail.com"
 EMAIL_PASSWORD = "bqvf eews ojzl wppi"
 
@@ -21,7 +27,7 @@ EMAIL_PASSWORD = "bqvf eews ojzl wppi"
 # NOAA WEATHER FETCH
 # -----------------------------
 def fetch_weather(zip_code, days_ahead=14):
-    nomi = pgeocode.Nominatim("us")
+    nomi = pgeocode.Nominatim('us')
     location = nomi.query_postal_code(zip_code)
     lat, lon = location.latitude, location.longitude
     if pd.isna(lat) or pd.isna(lon):
@@ -50,7 +56,10 @@ def fetch_weather(zip_code, days_ahead=14):
 # -----------------------------
 def calculate_late_blight_risk(weather_df):
     def risk_row(row):
-        return "HIGH" if 60 <= row["temp"] <= 80 and row["humidity"] > 80 and row["rainfall"] > 0.1 else "LOW"
+        if 60 <= row["temp"] <= 80 and row["humidity"] > 80 and row["rainfall"] > 0.1:
+            return "HIGH"
+        else:
+            return "LOW"
     weather_df["risk"] = weather_df.apply(risk_row, axis=1)
     return weather_df
 
@@ -73,34 +82,36 @@ def send_email(to_email, message):
 # SUPABASE UPDATE
 # -----------------------------
 def update_user_forecast(email, zip_code, weather_df):
-    # Upsert user
-    resp1 = supabase.table("users").upsert({"email": email, "zip_code": zip_code}).execute()
-    print("UPSERT USER:", resp1)
+    # Upsert user row
+    supabase.table("users").upsert({
+        "email": email,
+        "zip_code": zip_code
+    }).execute()
 
-    # Delete old forecasts
-    resp2 = supabase.table("forecasts").delete().eq("email", email).execute()
-    print("DELETE FORECAST:", resp2)
+    # Clear previous forecasts for this email
+    supabase.table("forecasts").delete().eq("email", email).execute()
 
-    # Insert forecast rows
-    records = [
-        {
+    # Convert all rows into clean supabase-friendly records
+    records = []
+    for _, row in weather_df.iterrows():
+        records.append({
             "email": email,
             "zip_code": zip_code,
-            "date": row["date"],
-            "temp": row["temp"],
-            "humidity": row["humidity"],
-            "rainfall": row["rainfall"],
-            "risk": row["risk"]
-        }
-        for _, row in weather_df.iterrows()
-    ]
-    resp3 = supabase.table("forecasts").insert(records).execute()
-    print("INSERT FORECAST:", resp3)
+            "date": str(row["date"]),             # Guarantees date format
+            "temp": float(row["temp"]),           # numeric
+            "humidity": float(row["humidity"]),   # numeric
+            "rainfall": float(row["rainfall"]),   # numeric
+            "risk": row["risk"]                   # text
+        })
 
-    # Send HIGH risk email if applicable
+    # Insert in one batch (better + avoids silent failures)
+    supabase.table("forecasts").insert(records).execute()
+
+    # Email alerts for high-risk days
     high_risk = weather_df[weather_df["risk"] == "HIGH"]
     if not high_risk.empty:
-        message = f"⚠️ High Late Blight risk forecast for {zip_code} on:\n" + "\n".join(high_risk["date"].tolist())
+        message = f"⚠️ High Late Blight risk forecast for {zip_code} on:\n"
+        message += "\n".join(high_risk["date"].tolist())
         send_email(email, message)
 
 # -----------------------------
